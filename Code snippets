@@ -50,3 +50,42 @@ destination_folder <- "C:/Users/mrudu/Documents/LIMS/Data/TCGA/TCGA_BRCA_MET"
 
 copy_tsv_files(source_root, destination_folder)
 convert_all_tsv_to_xlsx(destination_folder, destination_folder)
+
+
+
+
+###code to filter protein coding genes###
+library(openxlsx)
+filter_and_display <- function(df) {
+  # Filter rows where gene_type is "protein_coding"
+  df_filtered <- subset(df, gene_type == "protein_coding")
+  
+  # Display only the first 3 and 7th columns
+  df_filtered <- df_filtered[, c(1,2,3,7)]
+  
+  return(df_filtered)
+}
+
+folder_path <- "C:/Users/mrudu/Documents/LIMS/Data/TCGA/TCGA_BRCA_MET"
+
+xlsx_files <- list.files(path = folder_path, pattern = ".xlsx", full.names = TRUE)
+
+for (i in seq_along(xlsx_files)) {
+  # Read the XLSX file
+  tryCatch({
+    cancer <- read.xlsx(xlsx_files[i])    
+  
+    cancer_filtered <- filter_and_display(cancer)    
+  
+    original_filename <- tools::file_path_sans_ext(basename(xlsx_files[i]))
+    new_filename <- paste0(original_filename, ".xlsx")
+    output_file <- file.path(folder_path, new_filename)    
+   
+    write.xlsx(cancer_filtered, file = output_file)    
+  
+    cat("Processed", xlsx_files[i], "and saved as", new_filename, "\n")
+  }, error = function(e) {
+    # Print an error message if an error occurs during processing
+    cat("Error processing", xlsx_files[i], ": ", conditionMessage(e), "\n")
+  })
+}

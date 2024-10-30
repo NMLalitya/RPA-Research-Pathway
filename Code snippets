@@ -1,0 +1,52 @@
+####1. code to convert collate and convert .tsv to .xlsx####
+library(openxlsx)
+
+
+copy_tsv_files <- function(source_root, destination_folder) {
+  # Get list of all directories and subdirectories
+  all_dirs <- list.dirs(path = source_root, recursive = TRUE, full.names = TRUE)
+  
+
+  for (dir in all_dirs) {
+    # Get list of TSV files in the directory
+    tsv_files <- list.files(dir, pattern = "\\.tsv$", full.names = TRUE)
+    
+   
+    for (file in tsv_files) {
+      destination_file <- file.path(destination_folder, basename(file))
+      file.copy(file, destination_file)
+      cat("Copied:", file, "to", destination_file, "\n")
+    }
+  }
+}
+
+tsv_to_xlsx <- function(tsv_file, output_folder) {
+
+  df <- read.delim(tsv_file, sep = "\t", header = TRUE, skip = 1)  
+  
+  filename <- tools::file_path_sans_ext(basename(tsv_file))  
+  
+  output_file <- file.path(output_folder, paste0(filename, ".xlsx"))  
+
+  write.xlsx(df, output_file)
+  cat("Converted", tsv_file, "to", output_file, "\n")
+}
+
+convert_all_tsv_to_xlsx <- function(folder_path, output_folder) {
+  # Create output folder if it doesn't exist
+  if (!dir.exists(output_folder)) {
+    dir.create(output_folder)
+  }  
+ 
+  tsv_files <- list.files(path = folder_path, pattern = "\\.tsv$", full.names = TRUE)  
+ 
+  for (file in tsv_files) {
+    tsv_to_xlsx(file, output_folder)
+  }
+}
+
+source_root <- "C:/Users/mrudu/Documents/LIMS/Data/TCGA/TCGA_BRCA_MET"
+destination_folder <- "C:/Users/mrudu/Documents/LIMS/Data/TCGA/TCGA_BRCA_MET"
+
+copy_tsv_files(source_root, destination_folder)
+convert_all_tsv_to_xlsx(destination_folder, destination_folder)

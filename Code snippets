@@ -3,7 +3,7 @@ library(openxlsx)
 
 
 copy_tsv_files <- function(source_root, destination_folder) {
-  # Get list of all directories and subdirectories
+  
   all_dirs <- list.dirs(path = source_root, recursive = TRUE, full.names = TRUE)
   
 
@@ -33,7 +33,7 @@ tsv_to_xlsx <- function(tsv_file, output_folder) {
 }
 
 convert_all_tsv_to_xlsx <- function(folder_path, output_folder) {
-  # Create output folder if it doesn't exist
+
   if (!dir.exists(output_folder)) {
     dir.create(output_folder)
   }  
@@ -57,10 +57,10 @@ convert_all_tsv_to_xlsx(destination_folder, destination_folder)
 ###code to filter protein coding genes###
 library(openxlsx)
 filter_and_display <- function(df) {
-  # Filter rows where gene_type is "protein_coding"
+ 
   df_filtered <- subset(df, gene_type == "protein_coding")
   
-  # Display only the first 3 and 7th columns
+ 
   df_filtered <- df_filtered[, c(1,2,3,7)]
   
   return(df_filtered)
@@ -71,7 +71,7 @@ folder_path <- "C:/Users/mrudu/Documents/LIMS/Data/TCGA/TCGA_BRCA_MET"
 xlsx_files <- list.files(path = folder_path, pattern = ".xlsx", full.names = TRUE)
 
 for (i in seq_along(xlsx_files)) {
-  # Read the XLSX file
+
   tryCatch({
     cancer <- read.xlsx(xlsx_files[i])    
   
@@ -85,7 +85,208 @@ for (i in seq_along(xlsx_files)) {
   
     cat("Processed", xlsx_files[i], "and saved as", new_filename, "\n")
   }, error = function(e) {
-    # Print an error message if an error occurs during processing
+ 
     cat("Error processing", xlsx_files[i], ": ", conditionMessage(e), "\n")
   })
 }
+
+
+
+
+####code to make matrix of TPM counts####
+library(openxlsx)
+
+
+folder_path <- "C:/Users/mrudu/Documents/LIMS/Data/TCGA/TCGA_BRCA_MET"
+
+filtered_files <- list.files(path = folder_path, pattern = "\\.xlsx$", full.names = TRUE)
+
+filtered_data <- list()
+unmatched_files <- list()
+
+for (file in filtered_files) {
+  tryCatch({
+    filtered_data[[basename(file)]] <- read.xlsx(file)
+  }, error = function(e) {
+    # Print an error message if an error occurs during processing
+    cat("Error reading", basename(file), ": ", conditionMessage(e), "\n")
+  })
+}
+
+filtered_data <- Filter(Negate(is.null), filtered_data)
+
+
+if (length(filtered_data) == length(filtered_files)) {
+
+  same_columns <- all(sapply(filtered_data[-1], function(x) identical(colnames(filtered_data[[1]]), colnames(x))))
+  
+  if (same_columns) {
+    
+    common_gene_id <- unique(unlist(lapply(filtered_data, function(x) x$gene_id)))
+    common_unstranded_matrix <- matrix(NA, nrow = length(common_gene_id), ncol = length(filtered_data))
+    colnames(common_unstranded_matrix) <- basename(filtered_files)
+    rownames(common_unstranded_matrix) <- common_gene_id
+    
+    for (i in seq_along(filtered_data)) {
+      for (j in seq_along(common_gene_id)) {
+        gene_id <- common_gene_id[j]
+        match_indices <- which(filtered_data[[i]]$gene_id == gene_id)
+        if (length(match_indices) > 0) {
+          common_unstranded_matrix[j, i] <- filtered_data[[i]]$tpm_unstranded[match_indices[1]]
+        }
+      }
+    }
+    
+   
+    print(common_unstranded_matrix)
+  } else {
+    cat("Not all files hav the same column.\n")
+    unmatched_files <- filtered_files
+  }
+} else {
+  cat("Error: Some files could not beread.\n")
+  unmatched_files <- filtered_files
+}
+
+if (length(unmatched_files) > 0) {
+  cat("Files with unmatched 'gene_id':\n")
+  cat(paste(unmatched_files, collapse = "\n"), "\n")
+}
+
+library(openxlsx)
+
+common_unstranded_matrix <- as.matrix(common_unstranded_matrix)
+
+gene_id <- rownames(common_unstranded_matrix)
+common_unstranded_df <- as.data.frame(common_unstranded_matrix)
+common_unstranded_df$gene_id <- gene_id
+common_unstranded_df <- common_unstranded_df[, c(ncol(common_unstranded_df), 1:(ncol(common_unstranded_df)-1))]
+output_file <- "gene_id_tpm_matrix_cervix_uteri_cesc.xlsx"
+write.xlsx(common_unstranded_df, file = output_file, rowNames = FALSE)
+cat("GeneID TPM matrix saveD", output_file, "\n")
+
+
+####code to replace 0 with 1 and log of matrix values####
+library(readxl)
+library(writexl)
+file_path <- "C:/Users/mrudu/Documents/LIMS/Data/TCGA/Breast/gene_id_tpm_matrix_brca_normal.xlsx"
+data <- read_excel(file_path, sheet = 1)
+data[, -c(1, 2)] <- lapply(data[, -c(1, 2)], function(x) ifelse(x < 1, 1, x))
+data[, -c(1, 2)] <- lapply(data[, -c(1, 2)], function(x) log2(x))
+output_file_path <- "C:/Users/mrudu/Documents/LIMS/Data/TCGA/Breast/log_tcga_breast_normal.xlsx"
+write_xlsx(data, output_file_path)
+
+
+
+###script for boxplot###
+library(readxl)
+library(tidyr)
+library(ggplot2)
+library(dplyr)
+
+dge_data <- read_excel("C:/Users/mrudu/Desktop/top_5.xlsx", sheet = "Sheet1")
+
+
+dge_long <- pivot_longer(dge_data, 
+                         cols = -gene, 
+                         names_to = "cancer", 
+                         values_to = "log2FC")
+
+upper_quartile <- dge_long %>%
+  group_by(cancer) %>%
+  summarize(upper_q = quantile(log2FC, 0.75))
+
+dge_long <- dge_long %>%
+  left_join(upper_quartile, by = "cancer")
+
+dge_long <- dge_long %>%
+  mutate(is_upper_quartile = log2FC >= upper_q)
+
+ggplot(dge_long, aes(x = cancer, y = log2FC)) +
+  geom_boxplot(outlier.shape = 8, size = 1) +
+  geom_jitter(aes(color = ifelse(is_upper_quartile, gene, NA)), 
+              width = 0.2, height = 0, alpha = 0.7) + 
+  geom_crossbar(stat = "summary", fun.min = function(z) quantile(z, 0.25), 
+                fun.max = function(z) quantile(z, 0.75), fun = median, 
+                width = 0.7, fatten = 0) +  
+  scale_color_manual(values = setNames(rainbow(length(unique(dge_long$gene))), unique(dge_long$gene)), 
+                     na.value = "grey") + 
+  labs(title = "Boxplot of Log2FC Across 5 Cancers",
+       x = "Cancer Type",
+       y = "Log2 Fold Change (log2FC)",
+       color = "Gene") + 
+  theme_minimal() +
+  theme(
+    legend.position = "none", 
+    axis.title.x = element_text(face = "bold"),  
+    axis.title.y = element_text(face = "bold"),  
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    panel.border = element_rect(color = "black", fill = NA, size = 0.5)
+  )
+
+
+
+#####script for heatmap####
+
+data <- read_excel("C:/Users/mrudu/Desktop/R scripts/row_normalized_z_scores.xlsx", sheet = "Sheet1")
+
+gene_data <- data[, 2:5]  
+rownames(gene_data) <- data$Drug 
+cell_lines <- data$cell 
+
+annotation <- data.frame(cells = cell_lines)
+rownames(annotation) <- rownames(gene_data)
+
+colors <- colorRampPalette(c("red", "white", "blue"))(n = 100)
+png("heatmap-3.png", width = 6000, height = 20000, res=1000)
+pheatmap(gene_data,
+         annotation_row = annotation,
+         color = colors,
+         clustering_method = "complete",
+         scale = "row",  # This scales the gene expression data by row
+         show_rownames = TRUE,
+         show_colnames = TRUE,
+         cellheight = 3,
+         cellwidth = 10,
+         fontsize_row = 3,
+         main = "Drug vs Gene Expression Heatmap Grouped by Cell Line")
+dev.off()
+
+
+
+
+
+###code for finding GTEx sample IDs in gct file
+
+gtex_tp_reads <- read.delim(file="C:/Users/mrudu/Documents/LIMS/Data/GTEx/gene_tpm_GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_tpm.gct", skip=2)
+
+sample_ids_to_search <- csample_ids_to_search <- c("GTEX.1117F.2826.SM.5GZXL")
+                                                   
+gct_column_names <- colnames(gtex_tp_reads)
+missing_samples <- setdiff(sample_ids_to_search, gct_column_names)
+gct_column_names <- colnames(gtex_tp_reads)
+present_samples <- intersect(sample_ids_to_search, gct_column_names)
+
+if (length(present_samples) > 0) {
+  cat("The following sample IDs are found in the data frame:\n")
+  cat(paste(present_samples, collapse = "\n"))
+} else {
+  print("No sample IDs are present in the data frame.")
+}
+
+
+###Z-score normalizaion code####
+library(readxl)
+library(writexl)
+
+data <- read_excel("C:/Users/mrudu/Desktop/all_drugs/filter.xlsx", sheet = ">-3")
+z_scores <- data[, 2:5]
+normalize_row <- function(row) {
+  row_mean <- mean(row)
+  row_sd <- sd(row)
+  (row - row_mean) / row_sd 
+}
+normalized_z_scores_rowwise <- t(apply(z_scores, 1, normalize_row))
+data_normalized <- cbind(data[, 1], as.data.frame(normalized_z_scores_rowwise))
+colnames(data_normalized)[1] <- "Drug"  
+write_xlsx(data_normalized, "row_normalized_z_scores(-3).xlsx")
